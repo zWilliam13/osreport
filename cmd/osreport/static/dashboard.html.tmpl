@@ -33,15 +33,27 @@
   }
   h1 { font-size: 1.65rem; font-weight: 650; margin: 0 0 1.25rem; letter-spacing: -0.01em; }
 
-  .meta {
-    display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1.5rem;
+  .period {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+    color: var(--ink-soft); font-size: 0.82rem; margin-bottom: 1.25rem;
   }
-  .meta span {
-    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-    padding: 0.5rem 0.85rem; font-size: 0.82rem; color: var(--ink-soft);
-    box-shadow: var(--shadow-soft);
+  .period .dot { color: var(--line); }
+
+  .kpi-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; }
+  .kpi {
+    flex: 1 1 180px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1rem 1.25rem; box-shadow: var(--shadow-soft);
   }
-  .meta span strong { color: var(--ink); font-weight: 600; }
+  .kpi-label {
+    display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.35rem;
+  }
+  /* Stat-tile value: proportional figures at display size, not tabular-nums
+     — tabular spacing is for columns of numbers that must align vertically
+     (the table below), not a single standalone hero-style number. */
+  .kpi-value { font-size: 2rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1; }
+  .kpi-warn { border-color: rgba(250,178,25,0.45); }
+  .kpi-warn .kpi-value { color: #a15a0a; }
 
   .actions { display: flex; gap: 0.6rem; margin-bottom: 1.25rem; }
   .actions form { display: inline; }
@@ -84,23 +96,26 @@
   tr:last-child td { border-bottom: none; }
   tbody tr { transition: background 0.1s ease; }
   tbody tr:hover { background: rgba(58,90,217,0.035); }
+  /* Columns of numbers that must line up vertically get tabular-nums;
+     free-standing text columns (Alarma, Descripcion, ...) don't need it. */
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
-  /* Severidad fills (severityColor) are pale Excel cell-background tones —
-     readable as a fill, not as text. Pick a solid, accessible ink per
-     label instead of reusing the fill color as the text color. */
+  /* Status color (severity) never carries meaning alone: the dot is a
+     fixed, validated status hue (distinct from any categorical color used
+     elsewhere), but the label text is always solid ink on a neutral card —
+     never the pale Excel fill color reused as text, which is unreadable. */
   .sev-pill {
-    display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600;
-    font-size: 0.78rem; padding: 0.25rem 0.65rem; border-radius: 999px; white-space: nowrap;
-    color: var(--ink);
+    display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 600;
+    font-size: 0.78rem; padding: 0.3rem 0.7rem; border-radius: 999px; white-space: nowrap;
+    background: var(--card); border: 1px solid var(--line); color: var(--ink);
   }
   .sev-pill::before {
-    content: ""; width: 0.5rem; height: 0.5rem; border-radius: 50%;
-    background: currentColor; opacity: 0.85;
+    content: ""; width: 0.55rem; height: 0.55rem; border-radius: 50%; flex: 0 0 auto;
   }
-  .sev-pill[data-sev="Critico"] { background: #FFC7CE; color: #8a1f2d; }
-  .sev-pill[data-sev="Alto"]    { background: #FFD9A0; color: #7a4a06; }
-  .sev-pill[data-sev="Medio"]   { background: #FFEB9C; color: #6b5900; }
-  .sev-pill[data-sev="Bajo"]    { background: #D9D9D9; color: #44464f; }
+  .sev-pill[data-sev="Critico"]::before { background: #d03b3b; }
+  .sev-pill[data-sev="Alto"]::before    { background: #ec835a; }
+  .sev-pill[data-sev="Medio"]::before   { background: #fab219; }
+  .sev-pill[data-sev="Bajo"]::before    { background: #0ca30c; }
 
   .empty {
     color: var(--ink-soft); font-style: normal; background: var(--card);
@@ -122,13 +137,26 @@
 {{if not .HasData}}
 <p class="empty">Todavia no hay un reporte generado — espera al primer refresh o presiona "Actualizar ahora".</p>
 {{else}}
-<div class="meta">
-  <span><strong>Generado:</strong> {{.Data.GeneratedAt.Format "2006-01-02 15:04:05"}}</span>
-  <span><strong>Desde:</strong> {{.Data.From.Format "2006-01-02 15:04:05"}}</span>
-  <span><strong>Hasta:</strong> {{.Data.To.Format "2006-01-02 15:04:05"}}</span>
-  <span><strong>Total eventos:</strong> {{.Data.TotalEvents}}</span>
-  <span><strong>Documentos omitidos:</strong> {{.Data.SkippedDocs}}</span>
-  <span><strong>Ultima actualizacion:</strong> {{.LastUpdated}}</span>
+<div class="period">
+  <span>{{.Data.From.Format "2006-01-02 15:04:05"}} &rarr; {{.Data.To.Format "2006-01-02 15:04:05"}}</span>
+  <span class="dot">&middot;</span>
+  <span>Generado {{.Data.GeneratedAt.Format "2006-01-02 15:04:05"}}</span>
+  <span class="dot">&middot;</span>
+  <span>Actualizado {{.LastUpdated}}</span>
+</div>
+<div class="kpi-row">
+  <div class="kpi">
+    <span class="kpi-label">Total eventos</span>
+    <span class="kpi-value">{{.Data.TotalEvents}}</span>
+  </div>
+  <div class="kpi{{if gt .Data.SkippedDocs 0}} kpi-warn{{end}}">
+    <span class="kpi-label">Documentos omitidos</span>
+    <span class="kpi-value">{{.Data.SkippedDocs}}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Alarmas en el Top</span>
+    <span class="kpi-value">{{len .Data.TopAlarms}}</span>
+  </div>
 </div>
 {{end}}
 
@@ -150,19 +178,19 @@
   <div class="table-scroll">
   <table>
     <tr>
-      <th>Rank</th><th>Severidad</th><th>Componente</th><th>Alarma</th>
-      <th>Descripcion</th><th>Ejemplo</th><th>Count</th><th>Anterior</th><th>Tendencia</th>
+      <th class="num">Rank</th><th>Severidad</th><th>Componente</th><th>Alarma</th>
+      <th>Descripcion</th><th>Ejemplo</th><th class="num">Count</th><th class="num">Anterior</th><th>Tendencia</th>
     </tr>
     {{range .Data.TopAlarms}}
     <tr>
-      <td>{{.Rank}}</td>
+      <td class="num">{{.Rank}}</td>
       <td><span class="sev-pill" data-sev="{{severityLabel .Severity}}">{{severityLabel .Severity}}</span></td>
       <td>{{.Component}}</td>
       <td>{{.Alarma}}</td>
       <td>{{.Descripcion}}</td>
       <td>{{.Ejemplo}}</td>
-      <td>{{.Count}}</td>
-      <td>{{if .FoundInPrevious}}{{.PrevCount}}{{end}}</td>
+      <td class="num">{{.Count}}</td>
+      <td class="num">{{if .FoundInPrevious}}{{.PrevCount}}{{end}}</td>
       <td>{{trendLabel . $.Data.HasPreviousReport}}</td>
     </tr>
     {{end}}
