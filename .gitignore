@@ -1,0 +1,6 @@
+/osreport.exe
+/osreport
+/output/
+.env
+*.xlsx
+.codex/
