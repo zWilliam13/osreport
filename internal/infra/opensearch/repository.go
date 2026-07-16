@@ -22,7 +22,13 @@ type Repository struct {
 }
 
 const (
-	defaultPageSize = 1000
+	// defaultPageSize is maxed out on purpose: a real run against
+	// index-athonet showed ~200-250ms per search_after round trip
+	// regardless of page size (network + query overhead dominates, not
+	// payload size) — 324k events took 325 requests at 1000/page
+	// (~75s) versus ~33 requests at 10000/page, so a bigger page cuts
+	// wall-clock by cutting round trips, not by moving less data.
+	defaultPageSize = 10000
 	// maxPageSize matches OpenSearch's default index.max_result_window.
 	// search_after bypasses the from+size deep-pagination limit, but size
 	// itself is still bounds-checked against max_result_window — asking
