@@ -81,6 +81,24 @@ var knownFunctionEventTypes = map[string]string{
 	// the other two DIAM patterns (dynamic peer, mcptt down) don't and are
 	// special-cased before messageLineRe below.
 	"act_Process_Recv_Ans_Message": "DIAM_ORPHAN_ANSWER",
+
+	// Confirmed in real index-athonet data, 2026-08-03 — surfaced only after
+	// aggregate.go started guaranteeing visibility for patterns below the
+	// Top N cut (each was running 1,000-2,000 hits/week, always crowded out
+	// by the bigger recurring alarms above).
+	"hss_reload_subscriptions_with_insdel_subs": "HSS_PROFILE_RELOAD",
+	"tcap_dha_end_ind":                          "TCAP_END_UNALLOCATED",
+	"_dia_notify_route_failure":                 "DIAM_ROUTE_FAILURE",
+	"map_hlr_Auth_close_ind":                    "MAP_AUTH_CLOSE_NOT_IMPLEMENTED",
+
+	// Identical counts in real data (848 == 848, 2026-08-03) — set_state and
+	// release fire 1:1 for the same DHA, so treated as one signal rather
+	// than two. tcap_start_dha_timer (an older, already-tracked pattern with
+	// its own history) is a *different* count in the same data and is left
+	// uncataloged-by-code on purpose — see alarm_catalog.go, which gives it
+	// a title without touching its Key.
+	"tcap_dha_set_state": "TCAP_DHA_NOT_INIT",
+	"tcap_dha_release":   "TCAP_DHA_NOT_INIT",
 }
 
 // ExtractEventType derives a stable EventType plus any embedded peer/remote

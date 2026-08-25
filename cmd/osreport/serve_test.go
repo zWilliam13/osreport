@@ -230,7 +230,7 @@ func TestDashboardServer_DashboardBeforeFirstRefresh(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "Todavia no hay") {
+	if !strings.Contains(rec.Body.String(), "Sin reporte generado") {
 		t.Errorf("body missing the no-data message: %s", rec.Body.String())
 	}
 }
@@ -273,9 +273,6 @@ func TestDashboardServer_RefreshThenServeData(t *testing.T) {
 	srv.handleDashboard(rec, req)
 	if !strings.Contains(rec.Body.String(), "Enlace SS7") {
 		t.Errorf("dashboard HTML missing expected alarm: %s", rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "Web.Contents(\""+"http://"+req.Host+"/export.xlsx"+"\")") {
-		t.Errorf("dashboard HTML missing the PowerBI Web.Contents hint pointing at this host's /export.xlsx: %s", rec.Body.String())
 	}
 
 	// JSON API reflects the same data

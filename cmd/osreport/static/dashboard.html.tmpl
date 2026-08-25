@@ -2,206 +2,393 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="300">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9A%A8%3C/text%3E%3C/svg%3E">
 <title>osreport — Top Alarmas</title>
 <style>
+  /* Swiss industrial print palette: matte paper substrate, carbon ink,
+     one accent (hazard red) — no second status color, no gradients, no
+     shadows, no rounded corners anywhere in this file. */
   :root {
     color-scheme: light;
-    --bg: #f2f3f7;
-    --ink: #1c1e26;
-    --ink-soft: #63667a;
-    --card: #ffffff;
-    --line: rgba(28,30,38,0.08);
-    --accent: #3a5ad9;
-    --accent-ink: #ffffff;
-    --shadow-soft: 0 1px 2px rgba(28,30,38,0.04), 0 8px 24px -8px rgba(28,30,38,0.12);
+    --bg: #f4f4f0;
+    --ink: #111111;
+    --ink-dim: #5c5c5c;
+    --line: rgba(17,17,17,0.18);
+    --accent: #e61919;
+    --accent-ink: #f4f4f0;
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; border-radius: 0; }
   body {
-    font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    margin: 0; padding: 2.5rem clamp(1rem, 4vw, 3rem);
+    font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    margin: 0; padding: 2rem clamp(1rem, 4vw, 3rem);
     color: var(--ink); background: var(--bg);
-    /* faint radial mesh instead of a flat fill — reads calmer on a screen left open all day */
-    background-image: radial-gradient(circle at 15% 0%, rgba(58,90,217,0.06), transparent 45%),
-                       radial-gradient(circle at 100% 10%, rgba(58,90,217,0.05), transparent 40%);
   }
   .wrap { max-width: 1400px; margin: 0 auto; }
-  .eyebrow {
-    display: inline-block; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--accent); background: rgba(58,90,217,0.08);
-    padding: 0.3rem 0.7rem; border-radius: 999px; margin-bottom: 0.75rem;
-  }
-  h1 { font-size: 1.65rem; font-weight: 650; margin: 0 0 1.25rem; letter-spacing: -0.01em; }
 
-  .period {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
-    color: var(--ink-soft); font-size: 0.82rem; margin-bottom: 1.25rem;
+  .tag {
+    display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 0.6rem;
   }
-  .period .dot { color: var(--line); }
+  h1 {
+    font-family: -apple-system, "Segoe UI Black", "Helvetica Neue", "Arial Black", sans-serif;
+    font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 900; margin: 0 0 1rem;
+    letter-spacing: -0.02em; line-height: 0.9; text-transform: uppercase;
+  }
+  .header-rule { border: none; border-top: 2px solid var(--ink); margin: 0 0 1.25rem; }
 
-  .kpi-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; }
-  .kpi {
-    flex: 1 1 180px; background: var(--card); border: 1px solid var(--line);
-    border-radius: 14px; padding: 1rem 1.25rem; box-shadow: var(--shadow-soft);
+  .live { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .live::before {
+    content: ""; width: 0.5rem; height: 0.5rem; background: var(--accent); flex: 0 0 auto;
+    animation: pulse 2s ease-in-out infinite;
   }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+
+  .meta {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;
+    color: var(--ink-dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em;
+    margin-bottom: 1.5rem;
+  }
+  .meta .sep { color: var(--line); }
+
+  .kpi-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: 1.5rem;
+  }
+  .kpi { background: var(--bg); padding: 1rem 1.25rem; }
+  .kpi-warn { background: var(--accent); }
+  .kpi-warn .kpi-label, .kpi-warn .kpi-value { color: var(--accent-ink); }
   .kpi-label {
-    display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em;
-    text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.35rem;
+    display: block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-dim); margin-bottom: 0.4rem;
   }
-  /* Stat-tile value: proportional figures at display size, not tabular-nums
-     — tabular spacing is for columns of numbers that must align vertically
-     (the table below), not a single standalone hero-style number. */
-  .kpi-value { font-size: 2rem; font-weight: 650; letter-spacing: -0.01em; line-height: 1; }
-  .kpi-warn { border-color: rgba(250,178,25,0.45); }
-  .kpi-warn .kpi-value { color: #a15a0a; }
+  .kpi-value { font-size: 2.2rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
 
-  .actions { display: flex; gap: 0.6rem; margin-bottom: 1.25rem; }
+  /* Sparklines: no chart library, just a polyline over recent refreshes —
+     enough to see a trend shape, nothing more. Same ink as body text, since
+     this is a shape/context cue, not a second accent color. */
+  .spark polyline { fill: none; stroke: currentColor; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .kpi .spark { display: block; width: 72px; height: 22px; margin-top: 0.5rem; color: var(--ink-dim); }
+  .kpi-warn .spark { color: var(--accent-ink); opacity: 0.7; }
+  td .spark { display: inline-block; width: 44px; height: 16px; vertical-align: middle; margin-left: 0.4rem; color: var(--ink-dim); }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem; }
   .actions form { display: inline; }
   .actions button, .actions a.button {
-    background: var(--accent); color: var(--accent-ink); border: none;
-    padding: 0.6rem 1.1rem; border-radius: 999px; cursor: pointer;
-    font-size: 0.85rem; font-weight: 600; text-decoration: none; display: inline-block;
-    box-shadow: var(--shadow-soft); transition: transform 0.15s ease, box-shadow 0.15s ease;
+    background: var(--bg); color: var(--ink); border: 2px solid var(--ink);
+    padding: 0.6rem 1.1rem; cursor: pointer; font-family: inherit;
+    font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    text-decoration: none; display: inline-block;
   }
-  .actions button:hover, .actions a.button:hover { transform: translateY(-1px); }
-  .actions button:active, .actions a.button:active { transform: translateY(0) scale(0.98); }
+  .actions button:hover, .actions a.button:hover { background: var(--ink); color: var(--bg); }
+  .actions button:first-child { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .actions button:first-child:hover { background: var(--bg); color: var(--accent); }
+
+  a:focus-visible, button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
 
   .error {
-    background: #fff1f1; border: 1px solid rgba(211,51,51,0.25); color: #9c2626;
-    padding: 0.85rem 1.1rem; border-radius: 12px; margin-bottom: 1.25rem; font-size: 0.88rem;
-  }
-  .powerbi {
-    background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow-soft);
-    padding: 0.9rem 1.15rem; border-radius: 14px; margin-bottom: 1.5rem; font-size: 0.84rem;
-    color: var(--ink-soft);
-  }
-  .powerbi strong { color: var(--ink); }
-  .powerbi code {
-    background: var(--bg); padding: 0.15rem 0.45rem; border-radius: 6px;
-    border: 1px solid var(--line); user-select: all; color: var(--ink);
+    background: var(--accent); color: var(--accent-ink); border: 2px solid var(--accent);
+    padding: 0.8rem 1.1rem; margin-bottom: 1.25rem; font-size: 0.85rem; font-weight: 700;
   }
 
-  .table-card {
-    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-    box-shadow: var(--shadow-soft); overflow: hidden;
-  }
+  .table-wrap { border: 1px solid var(--line); }
   .table-scroll { overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; min-width: 760px; }
   th {
-    background: var(--bg); color: var(--ink-soft); text-align: left; padding: 0.7rem 0.9rem;
-    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-    border-bottom: 1px solid var(--line); position: sticky; top: 0;
+    background: var(--ink); color: var(--bg); text-align: left; padding: 0.6rem 0.9rem;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    position: sticky; top: 0; cursor: pointer; user-select: none;
   }
-  td { padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--line); font-size: 0.85rem; vertical-align: top; }
+  .sort-ind { display: inline-block; width: 1em; }
+  td { padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--line); font-size: 0.82rem; vertical-align: top; }
   tr:last-child td { border-bottom: none; }
-  tbody tr { transition: background 0.1s ease; }
-  tbody tr:hover { background: rgba(58,90,217,0.035); }
-  /* Columns of numbers that must line up vertically get tabular-nums;
-     free-standing text columns (Alarma, Descripcion, ...) don't need it. */
+  tbody tr:hover { background: rgba(17,17,17,0.05); }
   th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.col-desc { max-width: 34ch; white-space: normal; word-break: break-word; }
 
-  /* Status color (severity) never carries meaning alone: the dot is a
-     fixed, validated status hue (distinct from any categorical color used
-     elsewhere), but the label text is always solid ink on a neutral card —
-     never the pale Excel fill color reused as text, which is unreadable. */
-  .sev-pill {
-    display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 600;
-    font-size: 0.78rem; padding: 0.3rem 0.7rem; border-radius: 999px; white-space: nowrap;
-    background: var(--card); border: 1px solid var(--line); color: var(--ink);
+  /* Severity is shown by fill/weight, not a fourth categorical hue — this
+     is the one accent color (red), used at three intensities: solid fill
+     (critico), text-only (alto), dim text (medio/bajo). */
+  .sev {
+    display: inline-block; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.03em;
+    padding: 0.15rem 0.5rem; border: 1px solid transparent; white-space: nowrap;
   }
-  .sev-pill::before {
-    content: ""; width: 0.55rem; height: 0.55rem; border-radius: 50%; flex: 0 0 auto;
+  .sev[data-sev="Critico"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .sev[data-sev="Alto"]    { color: var(--accent); border-color: var(--accent); }
+  .sev[data-sev="Medio"]   { color: var(--ink); border-color: var(--line); }
+  .sev[data-sev="Bajo"]    { color: var(--ink-dim); border-color: var(--line); }
+
+  /* Severity pills up top double as filter toggles — same look at rest,
+     an outline (the same device used for :focus-visible) marks "engaged"
+     regardless of which severity's own colors are underneath it. */
+  .sev-filter { font-family: inherit; cursor: pointer; }
+  .sev-filter.active { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  .table-controls { margin-bottom: 0.75rem; }
+  #table-search {
+    width: 100%; max-width: 20rem; background: var(--bg); color: var(--ink); border: 2px solid var(--ink);
+    padding: 0.5rem 0.75rem; font-family: inherit; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em;
   }
-  .sev-pill[data-sev="Critico"]::before { background: #d03b3b; }
-  .sev-pill[data-sev="Alto"]::before    { background: #ec835a; }
-  .sev-pill[data-sev="Medio"]::before   { background: #fab219; }
-  .sev-pill[data-sev="Bajo"]::before    { background: #0ca30c; }
+  #table-search::placeholder { color: var(--ink-dim); }
+
+  .badge-new {
+    display: inline-block; background: var(--accent); color: var(--accent-ink);
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; padding: 0.1rem 0.35rem;
+  }
+
+  .severity-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem; }
+  .severity-row .sev .count { font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 640px) {
+    table, thead, tbody, th, td, tr { display: block; }
+    .table-scroll { overflow-x: visible; }
+    thead tr { position: absolute; top: -9999px; left: -9999px; }
+    table { min-width: 0; }
+    tbody tr { border-bottom: 1px solid var(--line); padding: 0.75rem 0.9rem; }
+    tbody tr:last-child { border-bottom: none; }
+    td { border-bottom: none; padding: 0.2rem 0; }
+    td.col-desc { max-width: none; }
+    td::before {
+      content: attr(data-label); display: block; font-size: 0.66rem; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 0.1rem;
+    }
+    th.num, td.num { text-align: left; }
+  }
 
   .empty {
-    color: var(--ink-soft); font-style: normal; background: var(--card);
-    border: 1px solid var(--line); border-radius: 14px; padding: 1.5rem;
-    text-align: center; box-shadow: var(--shadow-soft);
+    color: var(--ink-dim); background: var(--bg); border: 1px dashed var(--line);
+    padding: 1.5rem; text-align: center; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em;
   }
+
+  .actions button[disabled] { opacity: 0.5; cursor: wait; }
+  .blink {
+    display: inline-block; width: 0.6em; height: 1em; background: currentColor;
+    margin-right: 0.5em; vertical-align: -0.15em; animation: blink 0.8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%);
+    background: var(--ink); color: var(--bg); border: 2px solid var(--ink);
+    padding: 0.6rem 1rem; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    opacity: 0; pointer-events: none; transition: opacity 0.15s ease;
+  }
+  .toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<span class="eyebrow">Panel de alarmas</span>
-<h1>osreport — Top Alarmas</h1>
+<span class="tag">[ OSREPORT / TELEMETRIA DE RED ]</span>
+<h1>Top Alarmas</h1>
+<hr class="header-rule">
 
 {{if .LastError}}
-<div class="error">Ultimo refresh fallo: {{.LastError}}</div>
+<div class="error">[ ERROR ] Ultimo refresh fallo: {{.LastError}}</div>
 {{end}}
 
 {{if not .HasData}}
-<p class="empty">Todavia no hay un reporte generado — espera al primer refresh o presiona "Actualizar ahora".</p>
+<p class="empty">Sin reporte generado — espera el primer refresh o presiona "Actualizar ahora"</p>
 {{else}}
-<div class="period">
-  <span>{{.Data.From.Format "2006-01-02 15:04:05"}} &rarr; {{.Data.To.Format "2006-01-02 15:04:05"}}</span>
-  <span class="dot">&middot;</span>
-  <span>Generado {{.Data.GeneratedAt.Format "2006-01-02 15:04:05"}}</span>
-  <span class="dot">&middot;</span>
-  <span>Actualizado {{.LastUpdated}}</span>
+<div class="meta">
+  <span class="live">EN VIVO</span>
+  <span class="sep">/</span>
+  <span>RANGO {{.Data.From.Format "2006-01-02 15:04"}} &rarr; {{.Data.To.Format "2006-01-02 15:04"}}</span>
+  <span class="sep">/</span>
+  <span>ACTUALIZADO {{.LastUpdated}}</span>
 </div>
 <div class="kpi-row">
   <div class="kpi">
     <span class="kpi-label">Total eventos</span>
     <span class="kpi-value">{{.Data.TotalEvents}}</span>
+    {{sparkline .TotalEventsHistory}}
   </div>
   <div class="kpi{{if gt .Data.SkippedDocs 0}} kpi-warn{{end}}">
     <span class="kpi-label">Documentos omitidos</span>
     <span class="kpi-value">{{.Data.SkippedDocs}}</span>
   </div>
-  <div class="kpi">
-    <span class="kpi-label">Alarmas en el Top</span>
-    <span class="kpi-value">{{len .Data.TopAlarms}}</span>
-  </div>
 </div>
+{{if .SeverityCounts}}
+<div class="severity-row">
+  {{range .SeverityCounts}}
+  <button type="button" class="sev sev-filter" data-sev="{{.Label}}">{{.Label}} <span class="count">{{.Count}}</span></button>
+  {{end}}
+</div>
+{{end}}
 {{end}}
 
 <div class="actions">
-  <form method="post" action="/api/refresh"><button type="submit">Actualizar ahora</button></form>
-  <a class="button" href="/export.xlsx">Exportar Excel</a>
+  <form method="post" action="/api/refresh" id="refresh-form">
+    <button type="submit" id="refresh-btn">Actualizar ahora</button>
+  </form>
+  <a class="button" href="/export.xlsx" id="export-link">Exportar Excel</a>
 </div>
-
-<div class="powerbi">
-  <strong>Conectar PowerBI directo (sin descargar a mano):</strong>
-  Obtener datos &rarr; Consulta en blanco &rarr; Editor avanzado, pega:
-  <code>= Excel.Workbook(Web.Contents("{{.ExportURL}}"), true)</code>
-  — cada vez que aprietes "Actualizar" en PowerBI, trae los datos mas recientes del dashboard.
-</div>
+<div class="toast" id="toast"></div>
 
 {{if .HasData}}
   {{if .Data.TopAlarms}}
-  <div class="table-card">
+  <div class="table-controls">
+    <input type="search" id="table-search" placeholder="BUSCAR..." aria-label="Buscar en la tabla">
+  </div>
+  <div class="table-wrap">
   <div class="table-scroll">
   <table>
+    <thead>
     <tr>
       <th class="num">Rank</th><th>Severidad</th><th>Componente</th><th>Alarma</th>
       <th>Descripcion</th><th>Ejemplo</th><th class="num">Count</th><th class="num">Anterior</th><th>Tendencia</th>
     </tr>
+    </thead>
+    <tbody>
     {{range .Data.TopAlarms}}
     <tr>
-      <td class="num">{{.Rank}}</td>
-      <td><span class="sev-pill" data-sev="{{severityLabel .Severity}}">{{severityLabel .Severity}}</span></td>
-      <td>{{.Component}}</td>
-      <td>{{.Alarma}}</td>
-      <td>{{.Descripcion}}</td>
-      <td>{{.Ejemplo}}</td>
-      <td class="num">{{.Count}}</td>
-      <td class="num">{{if .FoundInPrevious}}{{.PrevCount}}{{end}}</td>
-      <td>{{trendLabel . $.Data.HasPreviousReport}}</td>
+      <td class="num" data-label="Rank">{{.Rank}}</td>
+      <td data-label="Severidad" data-sort-value="{{severityRank .Severity}}"><span class="sev" data-sev="{{severityLabel .Severity}}">{{severityLabel .Severity}}</span></td>
+      <td data-label="Componente">{{.Component}}</td>
+      <td data-label="Alarma">{{.Alarma}}{{if index $.NewAlarmKeys .Key}} <span class="badge-new">[NUEVO]</span>{{end}}</td>
+      <td class="col-desc" data-label="Descripcion">{{.Descripcion}}</td>
+      <td class="col-desc" data-label="Ejemplo">{{.Ejemplo}}</td>
+      <td class="num" data-label="Count">{{.Count}}</td>
+      <td class="num" data-label="Anterior">{{if .FoundInPrevious}}{{.PrevCount}}{{end}}</td>
+      <td data-label="Tendencia">{{trendLabel . $.Data.HasPreviousReport}}{{sparkline (index $.AlarmHistory .Key)}}</td>
     </tr>
     {{end}}
+    </tbody>
   </table>
   </div>
   </div>
+  <p class="empty" id="table-no-match" style="display:none">Sin resultados para el filtro/busqueda actual</p>
   {{else}}
-  <p class="empty">Sin alarmas en este periodo — 0 eventos coincidieron con el filtro/rango configurado.</p>
+  <p class="empty">Sin alarmas en este periodo — 0 eventos coincidieron con el filtro/rango configurado</p>
   {{end}}
 {{end}}
 
 </div>
+<script>
+  // Both actions are plain HTML (no fetch/XHR) so the dashboard still works
+  // with JS disabled — this only adds feedback, it's not load-bearing.
+  function showToast(msg, ms) {
+    var toast = document.getElementById("toast");
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(function () { toast.classList.remove("show"); }, ms || 3000);
+  }
+
+  document.getElementById("refresh-form").addEventListener("submit", function () {
+    var btn = document.getElementById("refresh-btn");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="blink"></span>ACTUALIZANDO... (VARIOS MINUTOS)';
+  });
+
+  document.getElementById("export-link").addEventListener("click", function () {
+    showToast("[ DESCARGANDO EXCEL ]");
+  });
+
+  if (new URLSearchParams(window.location.search).get("actualizado") === "1") {
+    showToast("[ DATOS ACTUALIZADOS ]");
+    history.replaceState(null, "", window.location.pathname);
+  }
+
+  // Replaces the old <meta http-equiv="refresh" content="300">, which
+  // reloaded unconditionally — yanking the page (and any scroll position or
+  // toast) out from under someone actively reading it, even in a background
+  // tab. This only reloads when the tab is actually visible, and restores
+  // scroll position across the reload.
+  (function () {
+    var SCROLL_KEY = "osreport:scrollY";
+    var saved = sessionStorage.getItem(SCROLL_KEY);
+    if (saved !== null) {
+      sessionStorage.removeItem(SCROLL_KEY);
+      window.scrollTo(0, parseInt(saved, 10) || 0);
+    }
+    setInterval(function () {
+      if (document.visibilityState !== "visible") return;
+      sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+      window.location.reload();
+    }, 5 * 60 * 1000);
+  })();
+
+  // Click-to-sort: reorders the existing <tr> elements in place, no
+  // re-render needed. A column sorts numerically if its cells carry
+  // data-sort-value (Severidad's rank isn't the text shown) or the <th>
+  // itself is .num (Rank/Count/Anterior); everything else sorts as text.
+  (function () {
+    var table = document.querySelector(".table-wrap table");
+    if (!table || !table.tHead || !table.tBodies[0]) return;
+    var headerRow = table.tHead.rows[0];
+    var tbody = table.tBodies[0];
+    var current = { index: -1, dir: 1 };
+
+    Array.prototype.forEach.call(headerRow.cells, function (th, index) {
+      var ind = document.createElement("span");
+      ind.className = "sort-ind";
+      th.appendChild(ind);
+
+      th.addEventListener("click", function () {
+        var dir = current.index === index ? -current.dir : 1;
+        current = { index: index, dir: dir };
+        var numeric = th.classList.contains("num") ||
+          (tbody.rows[0] && tbody.rows[0].cells[index].dataset.sortValue !== undefined);
+
+        var rows = Array.prototype.slice.call(tbody.rows);
+        rows.sort(function (a, b) {
+          var ca = a.cells[index], cb = b.cells[index];
+          var va = ca.dataset.sortValue !== undefined ? parseFloat(ca.dataset.sortValue)
+            : numeric ? (parseFloat(ca.textContent) || 0) : ca.textContent.trim().toLowerCase();
+          var vb = cb.dataset.sortValue !== undefined ? parseFloat(cb.dataset.sortValue)
+            : numeric ? (parseFloat(cb.textContent) || 0) : cb.textContent.trim().toLowerCase();
+          if (va < vb) return -dir;
+          if (va > vb) return dir;
+          return 0;
+        });
+        rows.forEach(function (row) { tbody.appendChild(row); });
+
+        Array.prototype.forEach.call(headerRow.cells, function (h) {
+          var existing = h.querySelector(".sort-ind");
+          if (existing) existing.textContent = "";
+        });
+        ind.textContent = dir === 1 ? " ▲" : " ▼";
+      });
+    });
+  })();
+
+  // Free-text search + severity-pill filters, combined with AND logic.
+  // Both act on the already-rendered rows (show/hide), no re-fetch.
+  (function () {
+    var table = document.querySelector(".table-wrap table");
+    if (!table || !table.tBodies[0]) return;
+    var tbody = table.tBodies[0];
+    var search = document.getElementById("table-search");
+    var activeSevs = [];
+
+    function apply() {
+      var q = search ? search.value.trim().toLowerCase() : "";
+      var visible = 0;
+      Array.prototype.forEach.call(tbody.rows, function (row) {
+        var matchesSearch = !q || row.textContent.toLowerCase().indexOf(q) !== -1;
+        var sevEl = row.querySelector(".sev[data-sev]");
+        var matchesSev = activeSevs.length === 0 || (sevEl && activeSevs.indexOf(sevEl.dataset.sev) !== -1);
+        var show = matchesSearch && matchesSev;
+        row.style.display = show ? "" : "none";
+        if (show) visible++;
+      });
+      var empty = document.getElementById("table-no-match");
+      if (empty) empty.style.display = visible === 0 ? "" : "none";
+    }
+
+    if (search) search.addEventListener("input", apply);
+    Array.prototype.forEach.call(document.querySelectorAll(".sev-filter"), function (btn) {
+      btn.addEventListener("click", function () {
+        var sev = btn.dataset.sev;
+        var at = activeSevs.indexOf(sev);
+        if (at === -1) { activeSevs.push(sev); btn.classList.add("active"); }
+        else { activeSevs.splice(at, 1); btn.classList.remove("active"); }
+        apply();
+      });
+    });
+  })();
+</script>
 </body>
 </html>

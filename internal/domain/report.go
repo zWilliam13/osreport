@@ -38,6 +38,13 @@ type ReportData struct {
 	SkippedDocs int // hits that matched the query but couldn't be mapped into an Event
 	TopAlarms   []TopAlarmRow
 
+	// AllAlarms is every distinct alarm this run classified, not just the
+	// TopAlarms cut — the durable record so a low-volume/low-severity
+	// pattern that never makes the dashboard's Top N still gets stored
+	// somewhere (see sqlitereport.RecordRefresh) instead of vanishing the
+	// moment this run's report is generated.
+	AllAlarms []TopAlarmRow
+
 	// HasPreviousReport is false on a first run (no prior report to
 	// compare against) — TopAlarmRow.PrevCount/FoundInPrevious are
 	// meaningless in that case, not just zero.

@@ -62,7 +62,8 @@ func GenerateReport(ctx context.Context, repo domain.EventRepository, writer dom
 		To:                p.To,
 		TotalEvents:       len(events),
 		SkippedDocs:       skipped,
-		TopAlarms:         BuildTopAlarms(events, groups, topN, p.PrevCounts),
+		TopAlarms:         BuildTopAlarms(events, groups, topN, p.PrevCounts, p.PrevReportExists),
+		AllAlarms:         BuildAllAlarms(events, groups, p.PrevCounts, p.PrevReportExists),
 		HasPreviousReport: p.PrevReportExists,
 	}
 

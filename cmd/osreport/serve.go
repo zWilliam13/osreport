@@ -20,6 +20,7 @@ import (
 	"osreport/internal/infra/config"
 	osinfra "osreport/internal/infra/opensearch"
 	"osreport/internal/reporting/excel"
+	"osreport/internal/reporting/sqlitereport"
 )
 
 //go:embed static/dashboard.html.tmpl
@@ -35,7 +36,52 @@ var dashboardTemplate = template.Must(template.New("dashboard.html.tmpl").Funcs(
 		return color
 	},
 	"trendLabel": excel.TrendLabel,
+	"sparkline":  sparklineSVG,
+	// severityRank exposes Severity's underlying ordering (Critical highest)
+	// as a plain int, for the table's client-side sort — .Severity itself
+	// prints its Stringer label, not a sortable number.
+	"severityRank": func(s domain.Severity) int { return int(s) },
 }).ParseFS(dashboardTemplateFS, "static/dashboard.html.tmpl"))
+
+// sparklineSVG renders counts (oldest first) as a minimal inline SVG
+// polyline — no chart library, just enough of a shape to see whether an
+// alarm is trending up or down across recent refreshes. Fewer than 2 points
+// can't show a trend, so it renders nothing rather than a single dot.
+func sparklineSVG(counts []int) template.HTML {
+	if len(counts) < 2 {
+		return ""
+	}
+
+	const width, height = 64.0, 20.0
+	min, max := counts[0], counts[0]
+	for _, c := range counts {
+		if c < min {
+			min = c
+		}
+		if c > max {
+			max = c
+		}
+	}
+	span := max - min
+	if span == 0 {
+		span = 1 // flat series — render a level line instead of dividing by zero
+	}
+
+	step := width / float64(len(counts)-1)
+	var points strings.Builder
+	for i, c := range counts {
+		x := float64(i) * step
+		y := height - (float64(c-min)/float64(span))*height
+		if i > 0 {
+			points.WriteByte(' ')
+		}
+		fmt.Fprintf(&points, "%.1f,%.1f", x, y)
+	}
+
+	return template.HTML(fmt.Sprintf(
+		`<svg class="spark" viewBox="0 0 %g %g" preserveAspectRatio="none" aria-hidden="true"><polyline points="%s"></polyline></svg>`,
+		width, height, points.String()))
+}
 
 // HTTP server timeouts. WriteTimeout is sized for the slowest route
 // (/api/refresh, which runs the full pipeline synchronously) rather than
@@ -61,6 +107,7 @@ type dashboardServer struct {
 	topN       int
 	timeout    time.Duration
 	outputPath string
+	sqlitePath string // empty disables the trend-history sqlite file
 
 	// fileMu guards outputPath itself, not just the in-memory cache: refresh
 	// takes it exclusively (TryLock, so an overlapping tick/manual trigger
@@ -71,10 +118,12 @@ type dashboardServer struct {
 	// refresh-vs-export).
 	fileMu sync.RWMutex
 
-	mu          sync.RWMutex // guards the three fields below only
-	cache       domain.ReportData
-	lastUpdated time.Time
-	lastError   string
+	mu                 sync.RWMutex // guards the fields below only
+	cache              domain.ReportData
+	lastUpdated        time.Time
+	lastError          string
+	alarmHistory       map[string][]int // TopAlarmRow.Key -> counts, oldest first, for sparklines
+	totalEventsHistory []int            // same shape, whole-report total instead of per-alarm
 }
 
 // runServe implements `osreport serve`: a long-running process that keeps
@@ -89,7 +138,7 @@ func runServe(args []string) (err error) {
 		port       = fs.String("port", "8080", "HTTP port to listen on")
 		bindAll    = fs.Bool("bind-all", false, "listen on all network interfaces instead of only localhost — required before exposing this on a LAN (Fase 2); has no authentication of its own")
 		index      = fs.String("index", "index-athonet", "OpenSearch index to query")
-		component  = fs.String("component", "M3UA,TCAP,MAP,HSS_IMS,S6a,DIAM", "comma-separated ALERT_COMPONENT values to include (empty = any)")
+		component  = fs.String("component", "TCAP,MAP,HSS_IMS,S6a,DIAM", "comma-separated ALERT_COMPONENT values to include (empty = any)")
 		severities = fs.String("severity", "ERR,SYS,WRN", "comma-separated ALERT_SEVERITY values to include (empty = any)")
 		windowDays = fs.Int("window-days", 7, "rolling window size in days: from = today - window-days, to = today")
 		refresh    = fs.Duration("refresh-interval", 24*time.Hour, "how often to re-run the pipeline in the background")
@@ -98,6 +147,7 @@ func runServe(args []string) (err error) {
 		timeout    = fs.Duration("timeout", 0, "deadline for each background refresh (0 = use OS_TIMEOUT_SECONDS from env)")
 		logFile    = fs.String("log-file", "osreport.log", "path to append run logs to, alongside stderr")
 		output     = fs.String("output", "dashboard-informe.xlsx", "xlsx path the dashboard keeps refreshed for export (separate from the batch CLI's default)")
+		sqliteOut  = fs.String("sqlite-output", "dashboard-informe.sqlite", "sqlite path where the dashboard records refresh history for its own trend sparklines — empty disables it")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -148,6 +198,7 @@ func runServe(args []string) (err error) {
 		topN:       *topN,
 		timeout:    cfg.Timeout,
 		outputPath: *output,
+		sqlitePath: *sqliteOut,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -183,7 +234,8 @@ func runServe(args []string) (err error) {
 
 	slog.Info("dashboard listening", "addr", addr, "bind_all", *bindAll, "refresh_interval", refresh.String(),
 		"index", srv.index, "components", srv.components, "severities", srv.severities,
-		"window_days", srv.windowDays, "top", srv.topN, "output", srv.outputPath, "refresh_timeout", srv.timeout.String())
+		"window_days", srv.windowDays, "top", srv.topN, "output", srv.outputPath, "sqlite_output", srv.sqlitePath,
+		"refresh_timeout", srv.timeout.String())
 	if *bindAll {
 		slog.Warn("listening on all interfaces with no authentication — anyone on this network can read cluster data and trigger refreshes")
 	}
@@ -298,6 +350,28 @@ func (s *dashboardServer) refresh(ctx context.Context) {
 	slog.Info("refresh completed", "total_events", data.TotalEvents, "skipped_docs", data.SkippedDocs,
 		"top_alarms", len(data.TopAlarms), "duration_ms", time.Since(start).Milliseconds())
 	logReportAnomalies(data)
+
+	// Best-effort: a sparkline that's momentarily stale or missing a point
+	// is a cosmetic gap, not a reason to blank out the dashboard, which has
+	// already updated successfully at this point.
+	if s.sqlitePath != "" {
+		if err := sqlitereport.RecordRefresh(s.sqlitePath, data); err != nil {
+			slog.Error("record sqlite history", "error", err, "path", s.sqlitePath)
+		} else {
+			alarmHistory, err := sqlitereport.AlarmHistory(s.sqlitePath)
+			if err != nil {
+				slog.Error("read alarm history", "error", err, "path", s.sqlitePath)
+			}
+			totalEventsHistory, err := sqlitereport.TotalEventsHistory(s.sqlitePath)
+			if err != nil {
+				slog.Error("read total events history", "error", err, "path", s.sqlitePath)
+			}
+			s.mu.Lock()
+			s.alarmHistory = alarmHistory
+			s.totalEventsHistory = totalEventsHistory
+			s.mu.Unlock()
+		}
+	}
 }
 
 func (s *dashboardServer) snapshot() (data domain.ReportData, lastUpdated time.Time, lastError string) {
@@ -306,17 +380,77 @@ func (s *dashboardServer) snapshot() (data domain.ReportData, lastUpdated time.T
 	return s.cache, s.lastUpdated, s.lastError
 }
 
+// historySnapshot returns the sparkline data recorded by the most recent
+// successful refresh (nil/empty until sqlitePath is enabled and at least
+// one refresh has completed).
+func (s *dashboardServer) historySnapshot() (alarmHistory map[string][]int, totalEventsHistory []int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.alarmHistory, s.totalEventsHistory
+}
+
 func (s *dashboardServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
 
 type dashboardViewModel struct {
-	Data        domain.ReportData
-	LastUpdated string
-	LastError   string
-	HasData     bool
-	ExportURL   string // absolute URL of /export.xlsx, for pointing PowerBI's Web.Contents directly at it
+	Data               domain.ReportData
+	LastUpdated        string
+	LastError          string
+	HasData            bool
+	SeverityCounts     []severityCount  // breakdown of Data.TopAlarms by severity, worst first
+	AlarmHistory       map[string][]int // TopAlarmRow.Key -> counts, for the per-row sparkline
+	TotalEventsHistory []int            // for the Total eventos KPI sparkline
+	NewAlarmKeys       map[string]bool  // TopAlarmRow.Key -> true if this refresh is its first-ever appearance
+}
+
+// newAlarmKeys flags a Key as new when its history has exactly one point —
+// this refresh's own — meaning it never showed up in any prior refresh.
+// Requiring at least 2 recorded refreshes overall (len(totalEventsHistory))
+// avoids flagging every single alarm as "new" on the very first refresh
+// after this history table starts getting populated, when nothing has a
+// second data point yet simply because there's no history to compare to.
+func newAlarmKeys(alarmHistory map[string][]int, totalEventsHistory []int) map[string]bool {
+	if len(totalEventsHistory) < 2 {
+		return nil
+	}
+	newKeys := map[string]bool{}
+	for key, counts := range alarmHistory {
+		if len(counts) == 1 {
+			newKeys[key] = true
+		}
+	}
+	return newKeys
+}
+
+// severityCount is one pill in the dashboard's severity breakdown row —
+// counts rows in the visible Top N, not every event in the window (that
+// total isn't available without changing what ReportData carries).
+type severityCount struct {
+	Severity domain.Severity
+	Label    string
+	Count    int
+}
+
+// severityCountOrder is worst-first so the breakdown row reads the same
+// direction as a triage list, not map iteration order (which is random).
+var severityCountOrder = []domain.Severity{
+	domain.SeverityCritical, domain.SeverityMajor, domain.SeverityMinor, domain.SeverityInfo,
+}
+
+func buildSeverityCounts(rows []domain.TopAlarmRow) []severityCount {
+	counts := make(map[domain.Severity]int, len(severityCountOrder))
+	for _, row := range rows {
+		counts[row.Severity]++
+	}
+	result := make([]severityCount, 0, len(severityCountOrder))
+	for _, sev := range severityCountOrder {
+		if n := counts[sev]; n > 0 {
+			result = append(result, severityCount{Severity: sev, Label: excel.SeverityLabel(sev), Count: n})
+		}
+	}
+	return result
 }
 
 func (s *dashboardServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -326,18 +460,18 @@ func (s *dashboardServer) handleDashboard(w http.ResponseWriter, r *http.Request
 	}
 
 	data, lastUpdated, lastError := s.snapshot()
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
+	alarmHistory, totalEventsHistory := s.historySnapshot()
 	view := dashboardViewModel{
-		Data:      data,
-		LastError: lastError,
-		HasData:   !lastUpdated.IsZero(),
-		ExportURL: scheme + "://" + r.Host + "/export.xlsx",
+		Data:               data,
+		LastError:          lastError,
+		HasData:            !lastUpdated.IsZero(),
+		AlarmHistory:       alarmHistory,
+		TotalEventsHistory: totalEventsHistory,
+		NewAlarmKeys:       newAlarmKeys(alarmHistory, totalEventsHistory),
 	}
 	if view.HasData {
 		view.LastUpdated = lastUpdated.Format("2006-01-02 15:04:05")
+		view.SeverityCounts = buildSeverityCounts(data.TopAlarms)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -370,7 +504,10 @@ func (s *dashboardServer) handleManualRefresh(w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.refreshRecovered(r.Context())
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	// ?actualizado=1 lets the dashboard show a "listo" toast after the
+	// redirect lands — the only signal the user gets that the (up to
+	// several-minutes-long) synchronous refresh actually finished.
+	http.Redirect(w, r, "/?actualizado=1", http.StatusSeeOther)
 }
 
 // handleExport serves the same .xlsx file the last refresh wrote via

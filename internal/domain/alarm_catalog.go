@@ -118,6 +118,35 @@ var alarmCatalog = map[string]AlarmInfo{
 		Alarma:      "Respuesta huerfana (hbh/e2e)",
 		Descripcion: "Respuesta Diameter sin match de transaccion - llega tarde, sintoma de latencia del peer, no de falla del sistema.",
 	},
+	"HSS_PROFILE_RELOAD": {
+		Alarma:      "Recarga de perfil por alta/baja de suscripcion",
+		Descripcion: "HSS recarga el perfil de una UE tras un insert/delete de suscripcion - lectura como telemetria de aprovisionamiento normal, no como falla (por eso va como Info, no Major, a diferencia de lo que su ALERT_SEVERITY=SYS crudo sugeriria).",
+	},
+	"TCAP_END_UNALLOCATED": {
+		Alarma:      "TCAP END sobre transaccion no asignada",
+		Descripcion: "Un END de dialogo TCAP llega para una transaccion que nunca se reservo - probable mismo trasfondo que el agotamiento de pool TCAP/MAP (transacciones huerfanas), no un patron independiente.",
+	},
+	"DIAM_ROUTE_FAILURE": {
+		Alarma:      "Fallo de ruteo Diameter (sin peer destino)",
+		Descripcion: "No se encontro un peer destino para la solicitud Diameter - tabla de rutas/peer no configurado o peer caido, distinto de DIAM_PEER_DOWN (que es una reconexion en curso, no una ausencia total de ruta).",
+	},
+	"MAP_AUTH_CLOSE_NOT_IMPLEMENTED": {
+		Alarma:      "Cierre de autenticacion MAP no implementado",
+		Descripcion: "El cierre de la sesion de autenticacion HLR (Auth close) golpea una ruta marcada NOT IMPLEMENTED en el stack MAP - posible brecha real de funcionalidad, no solo ruido; candidato a escalar si el volumen se sostiene.",
+	},
+	"TCAP_DHA_NOT_INIT": {
+		Alarma:      "DHA no inicializado (set_state / release)",
+		Descripcion: "Una Dialogue Handling Association (DHA) de TCAP recibe set_state o release sin haber sido inicializada - mismo DHA en ambos casos en los ejemplos vistos, probable trasfondo compartido con el agotamiento de pool TCAP/MAP (transacciones huerfanas que nunca llegaron a reservar su DHA).",
+	},
+	// Distinta de TCAP_DHA_NOT_INIT: dispara desde un timer, no desde
+	// set_state/release, y su conteo no coincide con el de esas dos - no
+	// hay evidencia de que sea el mismo evento, asi que se deja como su
+	// propio EventType (function name como Key, sin remapear) para no
+	// romper su historial de tendencia ya establecido.
+	"tcap_start_dha_timer": {
+		Alarma:      "DHA no inicializado (timer)",
+		Descripcion: "Un timer de TCAP dispara sobre una DHA que no fue inicializada - mismo sintoma de fondo que el resto de la familia DHA/DSM no inicializado, via un disparador distinto (timer en vez de set_state/release).",
+	},
 }
 
 // DescribeAlarm returns the catalog entry for eventType, or a generic

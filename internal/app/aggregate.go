@@ -27,14 +27,16 @@ type alarmAcc struct {
 	lastSeen time.Time
 }
 
-// BuildTopAlarms ranks events + correlation groups into the Top N Alarmas
-// table: a correlated root-cause incident (e.g. two EventTypes co-occurring
-// across components) becomes one row, keyed by RootCause; any event not
-// swept into a correlation group becomes its own row, keyed by
-// (Component, EventType). Both kinds of row rank together by
-// (Severity desc, Count desc), matching how a reviewer would triage them
-// side by side.
-func BuildTopAlarms(events []domain.Event, groups []domain.CorrelationGroup, topN int, prevCounts map[string]int) []domain.TopAlarmRow {
+// rankAlarms ranks events + correlation groups into one list: a correlated
+// root-cause incident (e.g. two EventTypes co-occurring across components)
+// becomes one row, keyed by RootCause; any event not swept into a
+// correlation group becomes its own row, keyed by (Component, EventType).
+// Both kinds of row rank together by (Severity desc, Count desc), matching
+// how a reviewer would triage them side by side — no cut applied here, every
+// distinct alarm in this run's data comes back. PrevCount/FoundInPrevious
+// are populated (when hasPrevReport) before the caller does any truncation,
+// so a row's "new" status never depends on whether some later cut kept it.
+func rankAlarms(events []domain.Event, groups []domain.CorrelationGroup, prevCounts map[string]int, hasPrevReport bool) []domain.TopAlarmRow {
 	ruleByRootCause := make(map[string]domain.CorrelationRule, len(domain.DefaultCorrelationRules))
 	for _, r := range domain.DefaultCorrelationRules {
 		ruleByRootCause[r.RootCause] = r
@@ -126,15 +128,39 @@ func BuildTopAlarms(events []domain.Event, groups []domain.CorrelationGroup, top
 		return all[i].Count > all[j].Count
 	})
 
-	if topN > 0 && len(all) > topN {
-		all = all[:topN]
+	if hasPrevReport {
+		for i := range all {
+			if count, ok := prevCounts[all[i].Key]; ok {
+				all[i].PrevCount = count
+				all[i].FoundInPrevious = true
+			}
+		}
 	}
+
 	for i := range all {
 		all[i].Rank = i + 1
-		if count, ok := prevCounts[all[i].Key]; ok {
-			all[i].PrevCount = count
-			all[i].FoundInPrevious = true
-		}
+	}
+	return all
+}
+
+// BuildAllAlarms returns every distinct alarm this run classified, ranked
+// (Severity desc, Count desc) but not cut to any Top N — the durable,
+// store-everything counterpart to BuildTopAlarms. A pattern too small or too
+// low-severity to make the Top N report is still a real thing that happened;
+// this is what a caller persists (see sqlitereport) so nothing is silently
+// discarded just because the dashboard/xlsx only has room for the most
+// dangerous few.
+func BuildAllAlarms(events []domain.Event, groups []domain.CorrelationGroup, prevCounts map[string]int, hasPrevReport bool) []domain.TopAlarmRow {
+	return rankAlarms(events, groups, prevCounts, hasPrevReport)
+}
+
+// BuildTopAlarms returns the topN most dangerous alarms (Severity desc,
+// Count desc) — what the dashboard/xlsx actually display. See
+// BuildAllAlarms for the uncut version used for storage.
+func BuildTopAlarms(events []domain.Event, groups []domain.CorrelationGroup, topN int, prevCounts map[string]int, hasPrevReport bool) []domain.TopAlarmRow {
+	all := rankAlarms(events, groups, prevCounts, hasPrevReport)
+	if topN > 0 && len(all) > topN {
+		all = all[:topN]
 	}
 	return all
 }

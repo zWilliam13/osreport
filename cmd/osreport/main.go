@@ -57,7 +57,7 @@ func run() (err error) {
 		from       = flag.String("from", "", "start of range, RFC3339 or YYYY-MM-DD (required)")
 		to         = flag.String("to", "", "end of range, RFC3339 or YYYY-MM-DD (required)")
 		index      = flag.String("index", "index-athonet", "OpenSearch index to query")
-		component  = flag.String("component", "M3UA,TCAP,MAP,HSS_IMS,S6a,DIAM", "comma-separated ALERT_COMPONENT values to include (empty = any)")
+		component  = flag.String("component", "TCAP,MAP,HSS_IMS,S6a,DIAM", "comma-separated ALERT_COMPONENT values to include (empty = any)")
 		severities = flag.String("severity", "ERR,SYS,WRN", "comma-separated ALERT_SEVERITY values to include (empty = any)")
 		output     = flag.String("output", "informe.xlsx", "output .xlsx path")
 		timeout    = flag.Duration("timeout", 0, "overall deadline for the run, e.g. 5m (0 = use OS_TIMEOUT_SECONDS from env)")

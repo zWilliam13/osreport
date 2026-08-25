@@ -1,7 +1,10 @@
 /osreport.exe
+*.exe
+*.exe~
 /osreport
 /output/
 .env
 *.xlsx
+*.sqlite
 .codex/
 *.log

@@ -150,6 +150,19 @@ var DefaultSeverityRules = []SeverityRule{
 		Result: SeverityInfo,
 	},
 	{
+		// Raw severity is SYS (would default to Major via raw-sys-is-major
+		// below), but the message itself ("N subs inside profile") reads as
+		// routine provisioning telemetry (a subscription insert/delete
+		// triggering a profile reload), not a fault — unlike ASP_DOWN's SYS
+		// tag, which does mean a real outage. This is a first-pass read
+		// from the message text alone (2026-08-03), not a multi-day
+		// business-impact study like the M3UA/TCAP rules above — revisit if
+		// this volume ever turns out to matter operationally.
+		Name:   "hss-profile-reload-is-info",
+		Match:  func(e Event) bool { return e.EventType == "HSS_PROFILE_RELOAD" },
+		Result: SeverityInfo,
+	},
+	{
 		Name:   "raw-err-is-major",
 		Match:  func(e Event) bool { return e.RawSeverity == "ERR" },
 		Result: SeverityMajor,

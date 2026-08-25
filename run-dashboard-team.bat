@@ -1,2 +1,2 @@
 @echo off
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run-dashboard-team.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run-dashboard.ps1" -Team %*
